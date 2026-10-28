@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Environment (keep .env.example tracked)
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Local file storage (uploads)
+storage/
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+
+# Test & coverage output
+coverage/
+reports/
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.swp
