@@ -13,7 +13,7 @@ onboarding are planned but not yet built.
 - PostgreSQL 18 via Knex 3
 - Local disk storage behind a swappable storage interface (S3/MinIO later)
 - Jest 30 + ts-jest + supertest
-- ESLint 10 flat, Prettier
+- ESLint 9 flat config, Prettier
 - Docker + docker-compose (Postgres + API)
 
 ## Getting started
@@ -38,10 +38,29 @@ npm run dev
 
 API listens on http://localhost:3000, health check at `GET /status`.
 
-### Docker
+### Docker / Podman
 
 ```bash
 docker compose up --build
+# or, with rootless Podman on openSUSE:
+podman compose up --build
+```
+
+Then:
+
+```bash
+curl -F "file=@./some-file.txt" http://localhost:3000/api/v1/files
+```
+
+Uploaded blobs live in the `storage-data` volume (`/app/storage` in the container). Inspect them
+with `podman exec eid-cloud-api ls -l /app/storage` (or `docker exec ...`). A named volume is used
+instead of a `./storage` bind mount because rootless Podman maps the container's `node` user to a
+subuid, which cannot write to a host-owned bind mount.
+
+To reset everything, including the database:
+
+```bash
+podman compose down -v
 ```
 
 ### Test

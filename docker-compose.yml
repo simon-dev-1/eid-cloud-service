@@ -1,0 +1,46 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    container_name: eid-cloud-postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eid}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-eid}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eid} -d ${POSTGRES_DATABASE:-eid}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build: .
+    container_name: eid-cloud-api
+    environment:
+      ENVIRONMENT: local
+      PORT: 3000
+      LOG_LEVEL: info
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-eid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eid}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-eid}
+      STORAGE_DIR: /app/storage
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+    ports:
+      - "3000:3000"
+    volumes:
+      # Named volume (instead of a ./storage bind mount) so uploads work with
+      # rootless Podman, where bind-mounted files are owned by the host user and
+      # are not writable by the container's `node` user.
+      - storage-data:/app/storage
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres-data:
+  storage-data:
