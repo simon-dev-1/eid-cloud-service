@@ -20,7 +20,7 @@ const { default: app } = await import('../../../src/app.js');
 const { setConfig } = await import('../../../src/config.js');
 const { storage } = await import('../../../src/clients/storage.js');
 const filesDao = await import('../../../src/domains/files/files-dao.js');
-const { testConfig } = await import('../../test-utils.ts');
+const { sessionCookie, testConfig } = await import('../../test-utils.ts');
 
 const putMock = jest.mocked(storage.put);
 const getMock = jest.mocked(storage.get);
@@ -54,6 +54,7 @@ describe('files routes', () => {
 
       const response = await request(app)
         .post('/api/v1/files')
+        .set('Cookie', sessionCookie())
         .attach('file', Buffer.from('hello'), {
           filename: 'hello.txt',
           contentType: 'text/plain',
@@ -66,7 +67,10 @@ describe('files routes', () => {
     });
 
     it('returns 400 when no file is attached', async () => {
-      const response = await request(app).post('/api/v1/files').expect(400);
+      const response = await request(app)
+        .post('/api/v1/files')
+        .set('Cookie', sessionCookie())
+        .expect(400);
 
       expect(response.body.message).toBe('File is required');
     });
@@ -76,7 +80,10 @@ describe('files routes', () => {
     it('lists files', async () => {
       listFilesMock.mockResolvedValue([fileDto]);
 
-      const response = await request(app).get('/api/v1/files').expect(200);
+      const response = await request(app)
+        .get('/api/v1/files')
+        .set('Cookie', sessionCookie())
+        .expect(200);
 
       expect(response.body).toEqual([fileDto]);
     });
@@ -87,7 +94,10 @@ describe('files routes', () => {
       getFileByIdMock.mockResolvedValue({ ...fileDto, storageKey: fileDto.id });
       getMock.mockResolvedValue({ data: Buffer.from('hello') });
 
-      const response = await request(app).get(`/api/v1/files/${fileDto.id}`).expect(200);
+      const response = await request(app)
+        .get(`/api/v1/files/${fileDto.id}`)
+        .set('Cookie', sessionCookie())
+        .expect(200);
 
       expect(response.headers['content-type']).toContain('text/plain');
       expect(response.headers['content-disposition']).toContain('attachment');
@@ -99,13 +109,17 @@ describe('files routes', () => {
 
       const response = await request(app)
         .get('/api/v1/files/00000000-0000-4000-8000-000000000002')
+        .set('Cookie', sessionCookie())
         .expect(404);
 
       expect(response.body.message).toContain('not found');
     });
 
     it('returns 400 when the id is not a UUID', async () => {
-      const response = await request(app).get('/api/v1/files/unknown-id').expect(400);
+      const response = await request(app)
+        .get('/api/v1/files/unknown-id')
+        .set('Cookie', sessionCookie())
+        .expect(400);
 
       expect(response.body.errors).toEqual(
         expect.arrayContaining([expect.objectContaining({ field: 'id' })]),
@@ -120,10 +134,13 @@ describe('files routes', () => {
       deleteMock.mockResolvedValue(undefined);
       deleteFileMock.mockResolvedValue(undefined);
 
-      await request(app).delete(`/api/v1/files/${fileDto.id}`).expect(204);
+      await request(app)
+        .delete(`/api/v1/files/${fileDto.id}`)
+        .set('Cookie', sessionCookie())
+        .expect(204);
 
       expect(deleteMock).toHaveBeenCalledWith(fileDto.id);
-      expect(deleteFileMock).toHaveBeenCalledWith(fileDto.id);
+      expect(deleteFileMock).toHaveBeenCalledWith(fileDto.id, expect.any(String));
     });
 
     it('returns 404 when the file is not found', async () => {
@@ -131,18 +148,41 @@ describe('files routes', () => {
 
       const response = await request(app)
         .delete('/api/v1/files/00000000-0000-4000-8000-000000000002')
+        .set('Cookie', sessionCookie())
         .expect(404);
 
       expect(response.body.message).toContain('not found');
     });
 
     it('returns 400 when the id is not a UUID', async () => {
-      const response = await request(app).delete('/api/v1/files/unknown-id').expect(400);
+      const response = await request(app)
+        .delete('/api/v1/files/unknown-id')
+        .set('Cookie', sessionCookie())
+        .expect(400);
 
       expect(response.body.errors).toEqual(
         expect.arrayContaining([expect.objectContaining({ field: 'id' })]),
       );
       expect(deleteMock).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('session gating', () => {
+    it('returns 401 when no session cookie is present', async () => {
+      const response = await request(app).get('/api/v1/files').expect(401);
+
+      expect(response.body.message).toBe('Authentication required');
+      expect(listFilesMock).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 when the session cookie is invalid', async () => {
+      const response = await request(app)
+        .get('/api/v1/files')
+        .set('Cookie', 'eid_session=invalid.token')
+        .expect(401);
+
+      expect(response.body.message).toBe('Invalid or expired session');
+      expect(listFilesMock).not.toHaveBeenCalled();
     });
   });
 });

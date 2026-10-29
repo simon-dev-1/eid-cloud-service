@@ -30,6 +30,15 @@ services:
       POSTGRES_DATABASE: ${POSTGRES_DATABASE:-eid}
       STORAGE_DIR: /app/storage
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+      # swiyu verifier integration (sidecar below)
+      SWIYU_VERIFIER_BASE_URL: http://verifier-service:8080
+      SWIYU_VERIFIER_ISSUER_DID: ${SWIYU_VERIFIER_ISSUER_DID:-did:tdw:QmPEZPhDFR4nEYSFK5bMnvECqdpf1tPTPJuWs9QrMjCumw:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:9a5559f0-b81c-4368-a170-e7b4ae424527}
+      VQPS_SCOPE: ${VQPS_SCOPE:-com.example.identityCardCredential_presentation}
+      VQPS_PURPOSE_NAME: ${VQPS_PURPOSE_NAME:-name verification}
+      VQPS_PURPOSE_DESCRIPTION: ${VQPS_PURPOSE_DESCRIPTION:-This purpose allows verification of name for a test}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-1800}
+      SERVER_KEK: ${SERVER_KEK:?SERVER_KEK is required}
     ports:
       - "3000:3000"
     volumes:
@@ -40,6 +49,71 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      verifier-service:
+        condition: service_started
+
+  # ─── swiyu Generic Verifier (sidecar) ───────────────────────────────────────
+  # Only /oid4vp/** needs to be reachable by the wallet (over https — see
+  # EXTERNAL_URL). /management/** is only called by the `api` service over the
+  # internal network and must NOT be exposed publicly.
+  verifier_postgres:
+    image: postgres:15-alpine
+    container_name: eid-cloud-verifier-postgres
+    environment:
+      POSTGRES_USER: verifier_user
+      POSTGRES_PASSWORD: ${VERIFIER_POSTGRES_PASSWORD:-verifier_secret}
+      POSTGRES_DB: verifier_db
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verifier_user -d verifier_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  verifier-service:
+    image: ghcr.io/swiyu-admin-ch/swiyu-verifier:latest
+    container_name: eid-cloud-verifier
+    configs:
+      - source: verifier_metadata
+        target: /verifier_metadata.json
+    ports:
+      # Host 8083 -> container 8080 (matches the cookbook's localhost:8083).
+      # Do not expose this publicly in production; put a reverse proxy in front
+      # that only forwards the /oid4vp/** paths.
+      - "8083:8080"
+    environment:
+      EXTERNAL_URL: ${EXTERNAL_URL:?EXTERNAL_URL is required (https URL reachable by the wallet)}
+      OPENID_CLIENT_METADATA_FILE: file:/verifier_metadata.json
+      VERIFIER_DID: ${VERIFIER_DID:?VERIFIER_DID is required}
+      DID_VERIFICATION_METHOD: ${DID_VERIFICATION_METHOD:?DID_VERIFICATION_METHOD is required}
+      # EC P-256 private key PEM. Multi-line; prefer a file/secret mount rather
+      # than an inline env var in .env.
+      SIGNING_KEY: ${SIGNING_KEY:?SIGNING_KEY is required}
+
+      POSTGRES_USER: verifier_user
+      POSTGRES_PASSWORD: ${VERIFIER_POSTGRES_PASSWORD:-verifier_secret}
+      POSTGRES_DB: verifier_db
+      POSTGRES_JDBC: jdbc:postgresql://verifier_postgres:5432/verifier_db
+    depends_on:
+      verifier_postgres:
+        condition: service_healthy
+
+configs:
+  verifier_metadata:
+    content: |
+      {
+        "client_id": "${VERIFIER_DID}",
+        "client_name#en": "eid-cloud",
+        "client_name#de": "eid-cloud (DE)",
+        "client_name": "eid-cloud",
+        "vp_formats_supported": {
+          "dc+sd-jwt": {
+            "sd-jwt_alg_values": ["ES256", "Ed25519"],
+            "kb-jwt_alg_values": ["ES256", "Ed25519"]
+          }
+        }
+      }
 
 volumes:
   postgres-data:

@@ -28,6 +28,8 @@ const getFileByIdMock = jest.mocked(filesDao.getFileById);
 const listFilesMock = jest.mocked(filesDao.listFiles);
 const deleteFileMock = jest.mocked(filesDao.deleteFile);
 
+const vaultId = '11111111-1111-4111-8111-111111111111';
+
 const fileRecord = {
   id: '00000000-0000-4000-8000-000000000001',
   storageKey: '00000000-0000-4000-8000-000000000001',
@@ -43,16 +45,19 @@ beforeEach(() => {
 
 describe('files service', () => {
   describe('uploadFile', () => {
-    it('writes the blob then stores metadata', async () => {
+    it('writes the blob then stores metadata scoped to the vault', async () => {
       putMock.mockResolvedValue(undefined);
       createFileMock.mockResolvedValue(fileRecord);
 
-      const result = await filesService.uploadFile({
-        originalName: 'hello.txt',
-        contentType: 'text/plain',
-        data: Buffer.from('hello'),
-        size: 5,
-      });
+      const result = await filesService.uploadFile(
+        {
+          originalName: 'hello.txt',
+          contentType: 'text/plain',
+          data: Buffer.from('hello'),
+          size: 5,
+        },
+        vaultId,
+      );
 
       expect(putMock).toHaveBeenCalledTimes(1);
       expect(putMock).toHaveBeenCalledWith(expect.any(String), Buffer.from('hello'), 'text/plain');
@@ -63,6 +68,7 @@ describe('files service', () => {
           contentType: 'text/plain',
           size: 5,
         }),
+        vaultId,
       );
       expect(result).toEqual(fileRecord);
     });
@@ -71,27 +77,32 @@ describe('files service', () => {
       putMock.mockResolvedValue(undefined);
       createFileMock.mockResolvedValue(fileRecord);
 
-      await filesService.uploadFile({
-        originalName: '../../etc/passwd',
-        contentType: 'text/plain',
-        data: Buffer.from(''),
-        size: 0,
-      });
+      await filesService.uploadFile(
+        {
+          originalName: '../../etc/passwd',
+          contentType: 'text/plain',
+          data: Buffer.from(''),
+          size: 0,
+        },
+        vaultId,
+      );
 
       expect(createFileMock).toHaveBeenCalledWith(
         expect.objectContaining({
           originalName: 'passwd',
         }),
+        vaultId,
       );
     });
   });
 
   describe('listFiles', () => {
-    it('returns the metadata list', async () => {
+    it('returns the metadata list for the vault', async () => {
       listFilesMock.mockResolvedValue([fileRecord]);
 
-      const result = await filesService.listFiles();
+      const result = await filesService.listFiles(vaultId);
 
+      expect(listFilesMock).toHaveBeenCalledWith(vaultId);
       expect(result).toEqual([fileRecord]);
     });
   });
@@ -101,9 +112,9 @@ describe('files service', () => {
       getFileByIdMock.mockResolvedValue(fileRecord);
       getMock.mockResolvedValue({ data: Buffer.from('hello') });
 
-      const result = await filesService.downloadFile(fileRecord.id);
+      const result = await filesService.downloadFile(fileRecord.id, vaultId);
 
-      expect(getFileByIdMock).toHaveBeenCalledWith(fileRecord.id);
+      expect(getFileByIdMock).toHaveBeenCalledWith(fileRecord.id, vaultId);
       expect(getMock).toHaveBeenCalledWith(fileRecord.storageKey);
       expect(result.data).toEqual(Buffer.from('hello'));
       expect(result.record).toEqual(fileRecord);
@@ -112,7 +123,9 @@ describe('files service', () => {
     it('throws notFoundError when the file does not exist', async () => {
       getFileByIdMock.mockResolvedValue(undefined);
 
-      await expect(filesService.downloadFile('missing')).rejects.toBeInstanceOf(notFoundError);
+      await expect(filesService.downloadFile('missing', vaultId)).rejects.toBeInstanceOf(
+        notFoundError,
+      );
     });
   });
 
@@ -122,16 +135,18 @@ describe('files service', () => {
       deleteMock.mockResolvedValue(undefined);
       deleteFileMock.mockResolvedValue(undefined);
 
-      await filesService.deleteFile(fileRecord.id);
+      await filesService.deleteFile(fileRecord.id, vaultId);
 
       expect(deleteMock).toHaveBeenCalledWith(fileRecord.storageKey);
-      expect(deleteFileMock).toHaveBeenCalledWith(fileRecord.id);
+      expect(deleteFileMock).toHaveBeenCalledWith(fileRecord.id, vaultId);
     });
 
     it('throws notFoundError when the file does not exist', async () => {
       getFileByIdMock.mockResolvedValue(undefined);
 
-      await expect(filesService.deleteFile('missing')).rejects.toBeInstanceOf(notFoundError);
+      await expect(filesService.deleteFile('missing', vaultId)).rejects.toBeInstanceOf(
+        notFoundError,
+      );
     });
   });
 });

@@ -6,12 +6,24 @@ type RequestContext = {
   validatedBody?: unknown;
   validatedQuery?: unknown;
   validatedParams?: unknown;
+  sessionVaultId?: string;
 };
 
 const storage = new AsyncLocalStorage<RequestContext>();
 
 export const runAsyncContext = (callback: () => void): void => {
   storage.run({}, callback);
+};
+
+export const setSessionVaultId = (vaultId: string): void => {
+  const store = storage.getStore();
+  if (store) {
+    store.sessionVaultId = vaultId;
+  }
+};
+
+export const getSessionVaultId = (): string | undefined => {
+  return storage.getStore()?.sessionVaultId;
 };
 
 export const setValidatedBody = (body: unknown): void => {

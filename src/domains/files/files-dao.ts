@@ -22,7 +22,7 @@ const mapRow = (row: FilesRow): FileDto => ({
 
 type InsertFileRecord = Omit<CreateFileInput, 'data'> & { id: string; storageKey: string };
 
-export const createFile = async (record: InsertFileRecord): Promise<FileDto> => {
+export const createFile = async (record: InsertFileRecord, vaultId: string): Promise<FileDto> => {
   const [row] = await db(filesTable)
     .insert({
       id: record.id,
@@ -30,21 +30,25 @@ export const createFile = async (record: InsertFileRecord): Promise<FileDto> => 
       original_name: record.originalName,
       content_type: record.contentType,
       size: record.size,
+      vault_id: vaultId,
     })
     .returning('*');
   return mapRow(row as FilesRow);
 };
 
-export const getFileById = async (id: string): Promise<FileRecord | undefined> => {
-  const row = (await db(filesTable).where({ id }).first()) as FilesRow | undefined;
+export const getFileById = async (id: string, vaultId: string): Promise<FileRecord | undefined> => {
+  const row = (await db(filesTable).where({ id, vault_id: vaultId }).first()) as
+    FilesRow | undefined;
   return row ? { ...mapRow(row), storageKey: row.storage_key } : undefined;
 };
 
-export const listFiles = async (): Promise<FileDto[]> => {
-  const rows = (await db(filesTable).orderBy('created_at', 'desc')) as FilesRow[];
+export const listFiles = async (vaultId: string): Promise<FileDto[]> => {
+  const rows = (await db(filesTable)
+    .where({ vault_id: vaultId })
+    .orderBy('created_at', 'desc')) as FilesRow[];
   return rows.map(mapRow);
 };
 
-export const deleteFile = async (id: string): Promise<void> => {
-  await db(filesTable).where({ id }).delete();
+export const deleteFile = async (id: string, vaultId: string): Promise<void> => {
+  await db(filesTable).where({ id, vault_id: vaultId }).delete();
 };
