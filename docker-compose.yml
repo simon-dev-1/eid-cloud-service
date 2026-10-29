@@ -32,7 +32,7 @@ services:
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
       # swiyu verifier integration (sidecar below)
       SWIYU_VERIFIER_BASE_URL: http://verifier-service:8080
-      SWIYU_VERIFIER_ISSUER_DID: ${SWIYU_VERIFIER_ISSUER_DID:-did:tdw:QmPEZPhDFR4nEYSFK5bMnvECqdpf1tPTPJuWs9QrMjCumw:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:9a5559f0-b81c-4368-a170-e7b4ae424527}
+      SWIYU_VERIFIER_ISSUER_DID: ${SWIYU_VERIFIER_ISSUER_DID:-did:webvh:QmPEZPhDFR4nEYSFK5bMnvECqdpf1tPTPJuWs9QrMjCumw:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:9a5559f0-b81c-4368-a170-e7b4ae424527}
       VQPS_SCOPE: ${VQPS_SCOPE:-com.example.identityCardCredential_presentation}
       VQPS_PURPOSE_NAME: ${VQPS_PURPOSE_NAME:-name verification}
       VQPS_PURPOSE_DESCRIPTION: ${VQPS_PURPOSE_DESCRIPTION:-This purpose allows verification of name for a test}
@@ -72,7 +72,7 @@ services:
       retries: 10
 
   verifier-service:
-    image: ghcr.io/swiyu-admin-ch/swiyu-verifier:latest
+    image: ghcr.io/swiyu-admin-ch/swiyu-verifier:5.0.1
     container_name: eid-cloud-verifier
     configs:
       - source: verifier_metadata
@@ -87,6 +87,10 @@ services:
       OPENID_CLIENT_METADATA_FILE: file:/verifier_metadata.json
       VERIFIER_DID: ${VERIFIER_DID:?VERIFIER_DID is required}
       DID_VERIFICATION_METHOD: ${DID_VERIFICATION_METHOD:?DID_VERIFICATION_METHOD is required}
+      # Deeplink scheme of the generated QR code. The regular swiyu app only registers
+      # `swiyu-verify`; the Sandbox Wallet registers `swiyu-verify-sandbox`. Since our DIDs are
+      # registered in the Sandbox registry, we target the Sandbox Wallet.
+      DEEPLINK_SCHEMA: ${DEEPLINK_SCHEMA:-swiyu-verify-sandbox}
       # EC P-256 private key PEM. Multi-line; prefer a file/secret mount rather
       # than an inline env var in .env.
       SIGNING_KEY: ${SIGNING_KEY:?SIGNING_KEY is required}

@@ -2,8 +2,10 @@ import env from 'env-var';
 
 // Beta-ID (BCS) issuer DID from the swiyu verifier cookbook. Used as the accepted issuer for
 // name verification until a stable, configured issuer is required.
+// Note: the BCS migrated its DID method from `did:tdw` (deprecated) to `did:webvh`; the SCID and
+// UUID are unchanged, only the method identifier differs.
 const betaIdIssuerDid =
-  'did:tdw:QmPEZPhDFR4nEYSFK5bMnvECqdpf1tPTPJuWs9QrMjCumw:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:9a5559f0-b81c-4368-a170-e7b4ae424527';
+  'did:webvh:QmPEZPhDFR4nEYSFK5bMnvECqdpf1tPTPJuWs9QrMjCumw:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:9a5559f0-b81c-4368-a170-e7b4ae424527';
 
 const config = {
   env: env.get('ENVIRONMENT').required().asString(),

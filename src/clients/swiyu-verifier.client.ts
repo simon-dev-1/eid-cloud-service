@@ -26,7 +26,14 @@ export interface GetVerificationResult {
 }
 
 const credentialId = 'identity_credential';
-const credentialVct = 'betaid-sdjwt';
+// The BCS migrated the Beta-ID credential type from `betaid-sdjwt` to
+// `urn:vct:ch.admin.bcs.betaid`; accept both while older credentials are still around.
+const credentialVcts = ['betaid-sdjwt', 'urn:vct:ch.admin.bcs.betaid'];
+
+// The BCS migrated its issuer DID method from `did:tdw` (deprecated) to `did:webvh` (same SCID +
+// UUID). Accept the legacy DID too so Beta-IDs issued before the migration still verify.
+const legacyBetaIdIssuerDid =
+  'did:tdw:QmPEZPhDFR4nEYSFK5bMnvECqdpf1tPTPJuWs9QrMjCumw:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:9a5559f0-b81c-4368-a170-e7b4ae424527';
 
 const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   let response: Response;
@@ -45,13 +52,16 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
 
 /**
  * Creates a verification request on the swiyu Generic Verifier, requesting the holder's
- * `first_name` and `last_name` from a Beta-ID credential.
+ * `given_name` and `family_name` from a Beta-ID credential.
  */
 export const createVerification = (): Promise<CreateVerificationResult> => {
   const body = {
-    accepted_issuer_dids: [config.swiyu.issuerDid],
+    accepted_issuer_dids: [config.swiyu.issuerDid, legacyBetaIdIssuerDid],
     jwt_secured_authorization_request: true,
-    response_mode: 'direct_post',
+    // `direct_post.jwt` (encrypted response) is required by the current swiyu wallet(s).
+    // Plain `direct_post` is rejected with `invalid_request`; the verifier then auto-adds the
+    // `jwks` + `encrypted_response_enc_values_supported` metadata for the encrypted response.
+    response_mode: 'direct_post.jwt',
     verification_purpose: {
       scope: config.verification.scope,
       purpose_name: { default: config.verification.purposeName },
@@ -62,8 +72,8 @@ export const createVerification = (): Promise<CreateVerificationResult> => {
         {
           id: credentialId,
           format: 'dc+sd-jwt',
-          meta: { vct_values: [credentialVct] },
-          claims: [{ path: ['first_name'] }, { path: ['last_name'] }],
+          meta: { vct_values: credentialVcts },
+          claims: [{ path: ['given_name'] }, { path: ['family_name'] }],
           require_cryptographic_holder_binding: true,
         },
       ],
@@ -98,8 +108,8 @@ export const extractName = (
   }
 
   for (const claims of Object.values(dcql)) {
-    const firstName = claims.first_name?.[0];
-    const lastName = claims.last_name?.[0];
+    const firstName = claims.given_name?.[0];
+    const lastName = claims.family_name?.[0];
     if (firstName && lastName) {
       return { firstName, lastName };
     }
