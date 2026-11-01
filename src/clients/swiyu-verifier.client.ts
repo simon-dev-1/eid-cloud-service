@@ -3,12 +3,14 @@ import { externalServiceError } from '../utils/errors.js';
 
 export type VerificationState = 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED';
 
-export interface DcqlClaims {
-  [claim: string]: string[];
+export interface CredentialSubject {
+  given_name?: string;
+  family_name?: string;
+  [key: string]: unknown;
 }
 
-export interface DcqlResponse {
-  [credentialId: string]: DcqlClaims;
+export interface CredentialSubjectData {
+  [credentialId: string]: CredentialSubject[];
 }
 
 export interface CreateVerificationResult {
@@ -21,7 +23,9 @@ export interface GetVerificationResult {
   id: string;
   state: string;
   wallet_response?: {
-    dcql_response?: DcqlResponse;
+    // The verifier (>=5.x) returns the requested claims under `credential_subject_data`
+    // (keyed by credential id, each value an array of credential objects with string claims).
+    credential_subject_data?: CredentialSubjectData;
   };
 }
 
@@ -91,8 +95,9 @@ export const getVerification = (id: string): Promise<GetVerificationResult> =>
   request<GetVerificationResult>(`/management/api/verifications/${id}`);
 
 /**
- * Extracts the verified first/last name from the verifier's DCQL response. The response maps
- * credential ids to claim paths, where each claim value is an array (the first value is used).
+ * Extracts the verified first/last name from the verifier's management response. The verifier
+ * returns the requested claims in `wallet_response.credential_subject_data`, keyed by credential
+ * id; each value is an array of credential objects with string `given_name`/`family_name` claims.
  */
 export const extractName = (
   result: GetVerificationResult,
@@ -102,16 +107,18 @@ export const extractName = (
       lastName: string;
     }
   | undefined => {
-  const dcql = result.wallet_response?.dcql_response;
-  if (!dcql) {
+  const subjectData = result.wallet_response?.credential_subject_data;
+  if (!subjectData) {
     return undefined;
   }
 
-  for (const claims of Object.values(dcql)) {
-    const firstName = claims.given_name?.[0];
-    const lastName = claims.family_name?.[0];
-    if (firstName && lastName) {
-      return { firstName, lastName };
+  for (const credentials of Object.values(subjectData)) {
+    for (const credential of credentials) {
+      const firstName = credential.given_name;
+      const lastName = credential.family_name;
+      if (firstName && lastName) {
+        return { firstName, lastName };
+      }
     }
   }
 
