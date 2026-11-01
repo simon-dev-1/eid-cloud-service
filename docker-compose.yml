@@ -95,6 +95,16 @@ services:
       # than an inline env var in .env.
       SIGNING_KEY: ${SIGNING_KEY:?SIGNING_KEY is required}
 
+      # On-the-fly vqPS registration (Trust Protocol 2.0) — injects a registered
+      # Verification Query Public Statement into the request so the wallet stops warning
+      # "request not registered". Leave unset to disable. Credentials from the swiyu
+      # API self-service portal.
+      SWIYU_TMS_AUTHORING_URL: ${SWIYU_TMS_AUTHORING_URL:-}
+      SWIYU_TMS_OAUTH_TOKEN_URL: ${SWIYU_TMS_OAUTH_TOKEN_URL:-}
+      SWIYU_TMS_OAUTH_CLIENT_ID: ${SWIYU_TMS_OAUTH_CLIENT_ID:-}
+      SWIYU_TMS_OAUTH_CLIENT_SECRET: ${SWIYU_TMS_OAUTH_CLIENT_SECRET:-}
+      SWIYU_TMS_BOOTSTRAP_REFRESH_TOKEN: ${SWIYU_TMS_BOOTSTRAP_REFRESH_TOKEN:-}
+
       POSTGRES_USER: verifier_user
       POSTGRES_PASSWORD: ${VERIFIER_POSTGRES_PASSWORD:-verifier_secret}
       POSTGRES_DB: verifier_db
