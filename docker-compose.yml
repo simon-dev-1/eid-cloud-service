@@ -105,6 +105,10 @@ services:
       SWIYU_TMS_OAUTH_CLIENT_SECRET: ${SWIYU_TMS_OAUTH_CLIENT_SECRET:-}
       SWIYU_TMS_BOOTSTRAP_REFRESH_TOKEN: ${SWIYU_TMS_BOOTSTRAP_REFRESH_TOKEN:-}
 
+      # Read-only trust registry (defaults already set in the image; explicit for clarity)
+      SWIYU_TRUST_REGISTRY_API_URL: ${SWIYU_TRUST_REGISTRY_API_URL:-https://trust-reg.trust-infra.swiyu-int.admin.ch}
+      SWIYU_TRUST_ISSUER_DID: ${SWIYU_TRUST_ISSUER_DID:-did:webvh:QmdVPcfEJgvQAJKEjaTWAhskT1kc59KZQiXNenqHBB7iH5:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:4c131dc4-ced1-454b-bbd4-9401c7512e37}
+
       POSTGRES_USER: verifier_user
       POSTGRES_PASSWORD: ${VERIFIER_POSTGRES_PASSWORD:-verifier_secret}
       POSTGRES_DB: verifier_db
