@@ -30,8 +30,8 @@ const credentialId = 'identity_credential';
 // `urn:vct:ch.admin.bcs.betaid`; accept both while older credentials are still around.
 const credentialVcts = ['betaid-sdjwt', 'urn:vct:ch.admin.bcs.betaid'];
 
-// The BCS migrated its issuer DID method from `did:tdw` (deprecated) to `did:webvh` (same SCID +
-// UUID). Accept the legacy DID too so Beta-IDs issued before the migration still verify.
+// The BCS re-onboarded from `did:tdw` (deprecated/frozen) to a new `did:webvh` DID. Keep the
+// legacy `did:tdw` DID too so Beta-IDs issued before the migration still verify.
 const legacyBetaIdIssuerDid =
   'did:tdw:QmPEZPhDFR4nEYSFK5bMnvECqdpf1tPTPJuWs9QrMjCumw:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:9a5559f0-b81c-4368-a170-e7b4ae424527';
 
