@@ -3,14 +3,12 @@ import { externalServiceError } from '../utils/errors.js';
 
 export type VerificationState = 'PENDING' | 'SUCCESS' | 'FAILED' | 'EXPIRED';
 
-export interface CredentialSubject {
-  given_name?: string;
-  family_name?: string;
-  [key: string]: unknown;
+export interface DcqlClaims {
+  [claim: string]: unknown[];
 }
 
-export interface CredentialSubjectData {
-  [credentialId: string]: CredentialSubject[];
+export interface DcqlResponse {
+  [credentialId: string]: DcqlClaims;
 }
 
 export interface CreateVerificationResult {
@@ -23,9 +21,9 @@ export interface GetVerificationResult {
   id: string;
   state: string;
   wallet_response?: {
-    // The verifier (>=5.x) returns the requested claims under `credential_subject_data`
-    // (keyed by credential id, each value an array of credential objects with string claims).
-    credential_subject_data?: CredentialSubjectData;
+    // verifier 5.1.0 returns the requested claims under `dcql_response`, keyed by credential id,
+    // then by claim path; each value is an array (the first element is the value).
+    dcql_response?: DcqlResponse;
   };
 }
 
@@ -95,9 +93,9 @@ export const getVerification = (id: string): Promise<GetVerificationResult> =>
   request<GetVerificationResult>(`/management/api/verifications/${id}`);
 
 /**
- * Extracts the verified first/last name from the verifier's management response. The verifier
- * returns the requested claims in `wallet_response.credential_subject_data`, keyed by credential
- * id; each value is an array of credential objects with string `given_name`/`family_name` claims.
+ * Extracts the verified first/last name from the verifier's management response. verifier 5.1.0
+ * returns the requested claims in `wallet_response.dcql_response`, keyed by credential id and then
+ * claim path; each claim value is an array whose first element is the value.
  */
 export const extractName = (
   result: GetVerificationResult,
@@ -107,18 +105,16 @@ export const extractName = (
       lastName: string;
     }
   | undefined => {
-  const subjectData = result.wallet_response?.credential_subject_data;
-  if (!subjectData) {
+  const dcql = result.wallet_response?.dcql_response;
+  if (!dcql) {
     return undefined;
   }
 
-  for (const credentials of Object.values(subjectData)) {
-    for (const credential of credentials) {
-      const firstName = credential.given_name;
-      const lastName = credential.family_name;
-      if (firstName && lastName) {
-        return { firstName, lastName };
-      }
+  for (const claims of Object.values(dcql)) {
+    const firstName = claims.given_name?.[0];
+    const lastName = claims.family_name?.[0];
+    if (typeof firstName === 'string' && typeof lastName === 'string') {
+      return { firstName, lastName };
     }
   }
 

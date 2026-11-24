@@ -72,7 +72,7 @@ services:
       retries: 10
 
   verifier-service:
-    image: ghcr.io/swiyu-admin-ch/swiyu-verifier:5.0.1
+    image: ghcr.io/swiyu-admin-ch/swiyu-verifier:5.1.0
     container_name: eid-cloud-verifier
     configs:
       - source: verifier_metadata
