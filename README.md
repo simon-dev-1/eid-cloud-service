@@ -63,6 +63,18 @@ To reset everything, including the database:
 podman compose down -v
 ```
 
+### swiyu verifier & vqPS token expiry
+
+The `swiyu-verifier` sidecar registers a Verification Query Public Statement (vqPS) on the fly using
+an OAuth2 refresh token from the swiyu API self-service portal. That refresh token is valid for
+**168 h (7 days)**.
+
+- **On a server (continuously running):** the verifier refreshes the token every ~12 h, so it never
+  expires — no action needed.
+- **In local dev:** if the stack is stopped for more than ~7 days, the token expires. Re-issue the
+  token in the API self-service portal, update `SWIYU_TMS_BOOTSTRAP_REFRESH_TOKEN` in `.env`, and
+  restart with `podman compose up -d verifier-service`.
+
 ### Test
 
 ```bash
