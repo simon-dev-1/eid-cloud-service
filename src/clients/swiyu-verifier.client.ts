@@ -27,29 +27,66 @@ export interface GetVerificationResult {
   };
 }
 
-const credentialId = 'identity_credential';
-// The BCS migrated the Beta-ID credential type from `betaid-sdjwt` to
-// `urn:vct:ch.admin.bcs.betaid`; accept both while older credentials are still around.
-const credentialVcts = ['betaid-sdjwt', 'urn:vct:ch.admin.bcs.betaid'];
+const sleep = (ms: number): Promise<void> => new Promise((resolve) => setTimeout(resolve, ms));
 
-// The BCS re-onboarded from `did:tdw` (deprecated/frozen) to a new `did:webvh` DID. Keep the
-// legacy `did:tdw` DID too so Beta-IDs issued before the migration still verify.
-const legacyBetaIdIssuerDid =
-  'did:tdw:QmPEZPhDFR4nEYSFK5bMnvECqdpf1tPTPJuWs9QrMjCumw:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:9a5559f0-b81c-4368-a170-e7b4ae424527';
+interface RequestOptions {
+  retries?: number;
+}
 
-const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
-  let response: Response;
-  try {
-    response = await fetch(`${config.swiyu.verifierBaseUrl}${path}`, init);
-  } catch {
-    throw new externalServiceError('swiyu verifier is unreachable');
+/**
+ * Performs an HTTP call against the verifier's management API with a hard timeout.
+ * Retries transient failures (network errors, timeouts, 5xx) up to `retries`
+ * extra attempts; client errors (4xx) are never retried.
+ */
+const request = async <T>(
+  path: string,
+  init: RequestInit = {},
+  { retries = 1 }: RequestOptions = {},
+): Promise<T> => {
+  const maxAttempts = retries + 1;
+  let lastError: Error = new externalServiceError('swiyu verifier is unreachable');
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), config.swiyu.managementTimeoutMs);
+
+    let retryable = false;
+    try {
+      const response = await fetch(`${config.swiyu.verifierBaseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+      });
+
+      if (response.ok) {
+        return (await response.json()) as T;
+      }
+
+      lastError = new externalServiceError(`swiyu verifier returned status ${response.status}`);
+      retryable = response.status >= 500;
+      if (!retryable) {
+        throw lastError;
+      }
+    } catch (error) {
+      if (controller.signal.aborted) {
+        lastError = new externalServiceError('swiyu verifier timed out');
+        retryable = true;
+      } else if (error instanceof externalServiceError) {
+        lastError = error;
+      } else {
+        lastError = new externalServiceError('swiyu verifier is unreachable');
+        retryable = true;
+      }
+    } finally {
+      clearTimeout(timeoutId);
+    }
+
+    if (!retryable || attempt >= maxAttempts - 1) {
+      throw lastError;
+    }
+    await sleep(200 * (attempt + 1));
   }
 
-  if (!response.ok) {
-    throw new externalServiceError(`swiyu verifier returned status ${response.status}`);
-  }
-
-  return (await response.json()) as T;
+  throw lastError;
 };
 
 /**
@@ -58,7 +95,7 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
  */
 export const createVerification = (): Promise<CreateVerificationResult> => {
   const body = {
-    accepted_issuer_dids: [config.swiyu.issuerDid, legacyBetaIdIssuerDid],
+    accepted_issuer_dids: [config.swiyu.issuerDid, config.swiyu.legacyIssuerDid],
     jwt_secured_authorization_request: true,
     // `direct_post.jwt` (encrypted response) is required by the current swiyu wallet(s).
     // Plain `direct_post` is rejected with `invalid_request`; the verifier then auto-adds the
@@ -72,9 +109,9 @@ export const createVerification = (): Promise<CreateVerificationResult> => {
     dcql_query: {
       credentials: [
         {
-          id: credentialId,
+          id: config.swiyu.credentialId,
           format: 'dc+sd-jwt',
-          meta: { vct_values: credentialVcts },
+          meta: { vct_values: config.swiyu.credentialVcts },
           claims: [{ path: ['given_name'] }, { path: ['family_name'] }],
           require_cryptographic_holder_binding: true,
         },
@@ -82,15 +119,19 @@ export const createVerification = (): Promise<CreateVerificationResult> => {
     },
   };
 
-  return request<CreateVerificationResult>('/management/api/verifications', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  });
+  return request<CreateVerificationResult>(
+    '/management/api/verifications',
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    },
+    { retries: 0 },
+  );
 };
 
 export const getVerification = (id: string): Promise<GetVerificationResult> =>
-  request<GetVerificationResult>(`/management/api/verifications/${id}`);
+  request<GetVerificationResult>(`/management/api/verifications/${id}`, {}, { retries: 1 });
 
 /**
  * Extracts the verified first/last name from the verifier's management response. verifier 5.1.0

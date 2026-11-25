@@ -9,7 +9,7 @@ onboarding are planned but not yet built.
 ## Tech stack
 
 - Node 26, TypeScript 6.0, ESM
-- Express 5, zod 4, pino 10, helmet, cors, env-var
+- Express 5, zod 4, pino 10, helmet, cors
 - PostgreSQL 18 via Knex 3
 - Local disk storage behind a swappable storage interface (S3/MinIO later)
 - Jest 30 + ts-jest + supertest

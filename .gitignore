@@ -11,6 +11,11 @@ dist/
 .env.*.local
 !.env.example
 
+# Deployment secrets (keep the example tracked)
+deploy/.env
+deploy/.env.*
+!deploy/.env.example
+
 # Local file storage (uploads)
 storage/
 

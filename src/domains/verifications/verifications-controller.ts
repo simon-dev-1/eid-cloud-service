@@ -1,6 +1,7 @@
 import * as verificationsService from './verifications-service.js';
 import { config } from '../../config.js';
 import { getValidatedParams } from '../../middlewares/async-context.js';
+import { sessionCookieOptions } from '../../utils/session.js';
 
 import type { VerificationIdParams } from './verifications-dtos.js';
 import type { Request, Response } from 'express';
@@ -22,13 +23,7 @@ export const pollVerificationHandler = async (
   const result = await verificationsService.pollVerification(id);
 
   if (result.state === 'SUCCESS' && result.sessionToken) {
-    response.cookie(config.session.cookieName, result.sessionToken, {
-      httpOnly: true,
-      sameSite: 'lax',
-      secure: config.env !== 'local',
-      maxAge: config.session.ttlSeconds * 1000,
-      path: '/',
-    });
+    response.cookie(config.session.cookieName, result.sessionToken, sessionCookieOptions());
   }
 
   response.status(200).send({

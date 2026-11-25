@@ -1,0 +1,34 @@
+# Single-host edge proxy (e.g. one DuckDNS subdomain).
+# One hostname serves the SPA + API + the wallet-facing verifier paths.
+# /management/** is never proxied to the verifier (it falls through to the SPA → 404).
+#
+# Use by copying over deploy/Caddyfile before `docker compose up`:
+#   cp deploy/Caddyfile.single-host deploy/Caddyfile
+
+{$APP_HOST} {
+	encode zstd gzip
+
+	# API — same origin, so the portal's session cookie works.
+	handle /api/* {
+		request_body {
+			max_size 12MB
+		}
+		reverse_proxy api:3000
+	}
+
+	# Wallet-facing verifier paths only.
+	handle /oid4vp/* {
+		reverse_proxy verifier-service:8080
+	}
+
+	# SPA fallback.
+	handle {
+		reverse_proxy portal:80
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+	}
+}

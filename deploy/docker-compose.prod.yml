@@ -1,0 +1,225 @@
+# Production compose — self-contained (no build), images pulled from a registry.
+# Only Caddy publishes ports; databases, API and verifier are internal-only.
+#
+#   docker compose -f deploy/docker-compose.prod.yml --env-file deploy/.env up -d
+#
+# The `.env` next to this file supplies all `${...}` values.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    container_name: eid-cloud-caddy
+    restart: unless-stopped
+    init: true
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      APP_HOST: ${APP_HOST:?APP_HOST is required}
+      VERIFY_HOST: ${VERIFY_HOST:?VERIFY_HOST is required}
+    volumes:
+      - caddy-data:/data
+      - caddy-config:/config
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+    networks:
+      - edge
+    logging: *default-logging
+
+  portal:
+    image: ${PORTAL_IMAGE:-ghcr.io/simon-dev-1/eid-cloud-portal}:${PORTAL_TAG:-latest}
+    container_name: eid-cloud-portal
+    restart: unless-stopped
+    init: true
+    networks:
+      - edge
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/healthz || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    logging: *default-logging
+
+  postgres:
+    image: postgres:18-alpine
+    container_name: eid-cloud-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-eid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DATABASE:-eid}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-eid} -d ${POSTGRES_DATABASE:-eid}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+
+  migrate:
+    image: ${API_IMAGE:-ghcr.io/simon-dev-1/eid-cloud-api}:${API_TAG:-latest}
+    container_name: eid-cloud-migrate
+    command: ["npm", "run", "db-migrate-docker"]
+    environment:
+      NODE_ENV: production
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-eid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-eid}
+      POSTGRES_SSL: ${POSTGRES_SSL:-disable}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    networks:
+      - internal
+    logging: *default-logging
+
+  api:
+    image: ${API_IMAGE:-ghcr.io/simon-dev-1/eid-cloud-api}:${API_TAG:-latest}
+    container_name: eid-cloud-api
+    restart: unless-stopped
+    init: true
+    environment:
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      PORT: "3000"
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      APP_ORIGIN: ${APP_ORIGIN:?APP_ORIGIN is required}
+      HTTP_TRUST_PROXY: "true"
+      HTTP_RATE_LIMIT_ENABLED: ${HTTP_RATE_LIMIT_ENABLED:-true}
+      HTTP_RATE_LIMIT_WINDOW_MS: ${HTTP_RATE_LIMIT_WINDOW_MS:-60000}
+      HTTP_RATE_LIMIT_MAX: ${HTTP_RATE_LIMIT_MAX:-120}
+      HTTP_RATE_LIMIT_VERIFICATION_MAX: ${HTTP_RATE_LIMIT_VERIFICATION_MAX:-10}
+      HTTP_RATE_LIMIT_UPLOAD_MAX: ${HTTP_RATE_LIMIT_UPLOAD_MAX:-30}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: ${POSTGRES_USER:-eid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-eid}
+      POSTGRES_SSL: ${POSTGRES_SSL:-disable}
+      POSTGRES_POOL_MIN: ${POSTGRES_POOL_MIN:-1}
+      POSTGRES_POOL_MAX: ${POSTGRES_POOL_MAX:-10}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-disk}
+      STORAGE_DIR: /app/storage
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
+      SWIYU_VERIFIER_BASE_URL: http://verifier-service:8080
+      SWIYU_VERIFIER_ISSUER_DID: ${SWIYU_VERIFIER_ISSUER_DID:-}
+      SWIYU_VERIFIER_LEGACY_ISSUER_DID: ${SWIYU_VERIFIER_LEGACY_ISSUER_DID:-}
+      SWIYU_VERIFIER_CREDENTIAL_ID: ${SWIYU_VERIFIER_CREDENTIAL_ID:-identity_credential}
+      SWIYU_VERIFIER_CREDENTIAL_VCTS: ${SWIYU_VERIFIER_CREDENTIAL_VCTS:-}
+      SWIYU_MANAGEMENT_TIMEOUT_MS: ${SWIYU_MANAGEMENT_TIMEOUT_MS:-5000}
+      VQPS_SCOPE: ${VQPS_SCOPE:?VQPS_SCOPE is required}
+      VQPS_PURPOSE_NAME: ${VQPS_PURPOSE_NAME:-name verification}
+      VQPS_PURPOSE_DESCRIPTION: ${VQPS_PURPOSE_DESCRIPTION:-}
+      SESSION_SECRET: ${SESSION_SECRET:?SESSION_SECRET is required}
+      SESSION_TTL_SECONDS: ${SESSION_TTL_SECONDS:-1800}
+      SERVER_KEK: ${SERVER_KEK:?SERVER_KEK is required}
+    volumes:
+      - storage-data:/app/storage
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      postgres:
+        condition: service_healthy
+      verifier-service:
+        condition: service_started
+    networks:
+      - edge
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    logging: *default-logging
+
+  verifier_postgres:
+    image: postgres:15-alpine
+    container_name: eid-cloud-verifier-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: verifier_user
+      POSTGRES_PASSWORD: ${VERIFIER_POSTGRES_PASSWORD:?VERIFIER_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: verifier_db
+    volumes:
+      - verifier-postgres-data:/var/lib/postgresql/data
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U verifier_user -d verifier_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    logging: *default-logging
+
+  verifier-service:
+    image: ghcr.io/swiyu-admin-ch/swiyu-verifier:5.1.0
+    container_name: eid-cloud-verifier
+    restart: unless-stopped
+    init: true
+    configs:
+      - source: verifier_metadata
+        target: /verifier_metadata.json
+    environment:
+      EXTERNAL_URL: ${EXTERNAL_URL:?EXTERNAL_URL is required}
+      OPENID_CLIENT_METADATA_FILE: file:/verifier_metadata.json
+      VERIFIER_DID: ${VERIFIER_DID:?VERIFIER_DID is required}
+      DID_VERIFICATION_METHOD: ${DID_VERIFICATION_METHOD:?DID_VERIFICATION_METHOD is required}
+      DEEPLINK_SCHEMA: ${DEEPLINK_SCHEMA:-swiyu-verify-sandbox}
+      SIGNING_KEY: ${SIGNING_KEY:?SIGNING_KEY is required}
+      SWIYU_TMS_AUTHORING_URL: ${SWIYU_TMS_AUTHORING_URL:-}
+      SWIYU_TMS_OAUTH_TOKEN_URL: ${SWIYU_TMS_OAUTH_TOKEN_URL:-}
+      SWIYU_TMS_OAUTH_CLIENT_ID: ${SWIYU_TMS_OAUTH_CLIENT_ID:-}
+      SWIYU_TMS_OAUTH_CLIENT_SECRET: ${SWIYU_TMS_OAUTH_CLIENT_SECRET:-}
+      SWIYU_TMS_BOOTSTRAP_REFRESH_TOKEN: ${SWIYU_TMS_BOOTSTRAP_REFRESH_TOKEN:-}
+      SWIYU_TRUST_REGISTRY_API_URL: ${SWIYU_TRUST_REGISTRY_API_URL:-https://trust-reg.trust-infra.swiyu-int.admin.ch}
+      SWIYU_TRUST_ISSUER_DID: ${SWIYU_TRUST_ISSUER_DID:-}
+      POSTGRES_USER: verifier_user
+      POSTGRES_PASSWORD: ${VERIFIER_POSTGRES_PASSWORD:?VERIFIER_POSTGRES_PASSWORD is required}
+      POSTGRES_DB: verifier_db
+      POSTGRES_JDBC: jdbc:postgresql://verifier_postgres:5432/verifier_db
+    depends_on:
+      verifier_postgres:
+        condition: service_healthy
+    networks:
+      - edge
+      - internal
+    logging: *default-logging
+
+configs:
+  verifier_metadata:
+    content: |
+      {
+        "client_id": "${VERIFIER_DID}",
+        "client_name#en": "eid-cloud",
+        "client_name#de": "eid-cloud (DE)",
+        "client_name": "eid-cloud",
+        "vp_formats_supported": {
+          "dc+sd-jwt": {
+            "sd-jwt_alg_values": ["ES256", "Ed25519"],
+            "kb-jwt_alg_values": ["ES256", "Ed25519"]
+          }
+        }
+      }
+
+networks:
+  edge:
+  internal:
+
+volumes:
+  caddy-data:
+  caddy-config:
+  postgres-data:
+  storage-data:
+  verifier-postgres-data:

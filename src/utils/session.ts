@@ -2,6 +2,8 @@ import { createHmac, timingSafeEqual } from 'node:crypto';
 
 import { config } from '../config.js';
 
+import type { CookieOptions } from 'express';
+
 export interface SessionPayload {
   vaultId: string;
   exp: number;
@@ -60,3 +62,15 @@ export const verifySession = (token: string): SessionPayload | undefined => {
 
   return payload;
 };
+
+/**
+ * Centralized cookie attributes for the session cookie. Kept in one place so the
+ * httpOnly/secure/sameSite settings cannot drift between handlers.
+ */
+export const sessionCookieOptions = (): CookieOptions => ({
+  httpOnly: true,
+  sameSite: 'lax',
+  secure: config.env !== 'local',
+  maxAge: config.session.ttlSeconds * 1000,
+  path: '/',
+});

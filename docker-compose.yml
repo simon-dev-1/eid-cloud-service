@@ -1,3 +1,9 @@
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   postgres:
     image: postgres:18-alpine
@@ -15,24 +21,55 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+    logging: *default-logging
 
-  api:
+  # Runs Knex migrations exactly once before the API starts.
+  migrate:
+    image: eid-cloud-api
     build: .
-    container_name: eid-cloud-api
+    container_name: eid-cloud-migrate
+    command: ["npm", "run", "db-migrate-docker"]
     environment:
-      ENVIRONMENT: local
-      PORT: 3000
-      LOG_LEVEL: info
+      NODE_ENV: production
       POSTGRES_HOST: postgres
       POSTGRES_PORT: 5432
       POSTGRES_USER: ${POSTGRES_USER:-eid}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eid}
       POSTGRES_DATABASE: ${POSTGRES_DATABASE:-eid}
+      POSTGRES_SSL: ${POSTGRES_SSL:-disable}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+    logging: *default-logging
+
+  api:
+    image: eid-cloud-api
+    build: .
+    container_name: eid-cloud-api
+    init: true
+    environment:
+      ENVIRONMENT: local
+      PORT: 3000
+      LOG_LEVEL: info
+      HTTP_TRUST_PROXY: "false"
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER:-eid}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-eid}
+      POSTGRES_DATABASE: ${POSTGRES_DATABASE:-eid}
+      POSTGRES_SSL: ${POSTGRES_SSL:-disable}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-disk}
       STORAGE_DIR: /app/storage
       MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-10485760}
       # swiyu verifier integration (sidecar below)
       SWIYU_VERIFIER_BASE_URL: http://verifier-service:8080
       SWIYU_VERIFIER_ISSUER_DID: ${SWIYU_VERIFIER_ISSUER_DID:-did:webvh:QmdPxnNc9MzGYZ6qcHuvi8YpDVYWW7mmefnCTPcKapNEL5:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:5f8a3c95-1772-4ebf-ada0-c88bafb258e1}
+      SWIYU_VERIFIER_LEGACY_ISSUER_DID: ${SWIYU_VERIFIER_LEGACY_ISSUER_DID:-did:tdw:QmPEZPhDFR4nEYSFK5bMnvECqdpf1tPTPJuWs9QrMjCumw:identifier-reg.trust-infra.swiyu-int.admin.ch:api:v1:did:9a5559f0-b81c-4368-a170-e7b4ae424527}
+      SWIYU_VERIFIER_CREDENTIAL_ID: ${SWIYU_VERIFIER_CREDENTIAL_ID:-identity_credential}
+      SWIYU_VERIFIER_CREDENTIAL_VCTS: ${SWIYU_VERIFIER_CREDENTIAL_VCTS:-betaid-sdjwt,urn:vct:ch.admin.bcs.betaid}
+      SWIYU_MANAGEMENT_TIMEOUT_MS: ${SWIYU_MANAGEMENT_TIMEOUT_MS:-5000}
       VQPS_SCOPE: ${VQPS_SCOPE:-com.example.identityCardCredential_presentation}
       VQPS_PURPOSE_NAME: ${VQPS_PURPOSE_NAME:-name verification}
       VQPS_PURPOSE_DESCRIPTION: ${VQPS_PURPOSE_DESCRIPTION:-This purpose allows verification of name for a test}
@@ -47,10 +84,20 @@ services:
       # are not writable by the container's `node` user.
       - storage-data:/app/storage
     depends_on:
+      migrate:
+        condition: service_completed_successfully
       postgres:
         condition: service_healthy
       verifier-service:
         condition: service_started
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1:3000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    logging: *default-logging
 
   # ─── swiyu Generic Verifier (sidecar) ───────────────────────────────────────
   # Only /oid4vp/** needs to be reachable by the wallet (over https — see
@@ -65,15 +112,20 @@ services:
       POSTGRES_DB: verifier_db
     ports:
       - "5434:5432"
+    volumes:
+      - verifier-postgres-data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U verifier_user -d verifier_db"]
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
+    logging: *default-logging
 
   verifier-service:
     image: ghcr.io/swiyu-admin-ch/swiyu-verifier:5.1.0
     container_name: eid-cloud-verifier
+    init: true
     configs:
       - source: verifier_metadata
         target: /verifier_metadata.json
@@ -116,6 +168,8 @@ services:
     depends_on:
       verifier_postgres:
         condition: service_healthy
+    restart: unless-stopped
+    logging: *default-logging
 
 configs:
   verifier_metadata:
@@ -136,3 +190,4 @@ configs:
 volumes:
   postgres-data:
   storage-data:
+  verifier-postgres-data:

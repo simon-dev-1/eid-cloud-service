@@ -2,11 +2,18 @@
 FROM node:26-alpine AS base
 # ────────────────────────────────────────────────────────────────────────
 
-# ─── DEPS ───────────────────────────────────────────────────────────────
+# ─── DEPS (dev + build) ─────────────────────────────────────────────────
 FROM base AS deps
 WORKDIR /app
 COPY ./package.json ./package-lock.json ./
 RUN npm ci
+# ────────────────────────────────────────────────────────────────────────
+
+# ─── DEPS (production only) ─────────────────────────────────────────────
+FROM base AS deps-prod
+WORKDIR /app
+COPY ./package.json ./package-lock.json ./
+RUN npm ci --omit=dev
 # ────────────────────────────────────────────────────────────────────────
 
 # ─── BUILDER ────────────────────────────────────────────────────────────
@@ -23,7 +30,7 @@ FROM base AS runner
 ENV NODE_ENV=production
 WORKDIR /app
 COPY --from=builder /app/dist ./dist
-COPY --from=builder /app/node_modules ./node_modules
+COPY --from=deps-prod /app/node_modules ./node_modules
 COPY --from=builder /app/package.json ./package.json
 
 RUN mkdir -p /app/storage && chown node:node /app/storage
@@ -33,5 +40,5 @@ USER node
 EXPOSE 3000
 VOLUME ["/app/storage"]
 
-CMD ["sh", "-c", "npm run db-migrate-docker && npm run start"]
+CMD ["node", "dist/index.js"]
 # ────────────────────────────────────────────────────────────────────────

@@ -19,7 +19,13 @@ const parseCookies = (header: string | undefined): Record<string, string> => {
     const key = part.slice(0, separatorIndex).trim();
     const value = part.slice(separatorIndex + 1).trim();
     if (key) {
-      cookies[key] = decodeURIComponent(value);
+      try {
+        cookies[key] = decodeURIComponent(value);
+      } catch {
+        // Malformed percent-encoding — keep the raw value so verification fails
+        // with a 401 instead of throwing a 500.
+        cookies[key] = value;
+      }
     }
   }
   return cookies;
