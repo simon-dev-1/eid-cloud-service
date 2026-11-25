@@ -99,11 +99,14 @@ const envSchema = z.object({
     .string()
     .default('This purpose allows verification of name for a test'),
 
-  SESSION_SECRET: z.string().min(1),
+  // Secrets default to empty at parse time so non-API processes (e.g. the
+  // `migrate` service) can load config without them. `validateConfig()` enforces
+  // their presence/strength when the API actually starts.
+  SESSION_SECRET: z.string().default(''),
   SESSION_TTL_SECONDS: z.coerce.number().int().positive().default(1800),
   SESSION_COOKIE_NAME: z.string().min(1).default('eid_session'),
 
-  SERVER_KEK: z.string().min(1),
+  SERVER_KEK: z.string().default(''),
 });
 
 // ─── Config type ─────────────────────────────────────────────────────────────
